@@ -14,38 +14,65 @@
  * Иногда промисы от API будут приходить в состояние rejected, (прямо как и API в реальной жизни)
  * Ответ будет приходить в поле {result}
  */
- import Api from '../tools/api';
+import { otherwise, andThen, ifElse, allPass, compose } from 'ramda';
 
- const api = new Api();
+import Api from '../tools/api';
 
- /**
-  * Я – пример, удали меня
-  */
- const wait = time => new Promise(resolve => {
-     setTimeout(resolve, time);
- })
+const api = new Api();
 
- const processSequence = ({value, writeLog, handleSuccess, handleError}) => {
-     /**
-      * Я – пример, удали меня
-      */
-     writeLog(value);
+const NUMBER_API_URL = 'https://api.tech/numbers/base';
+const ANIMAL_API_URL = 'https://animals.tech/';
 
-     api.get('https://api.tech/numbers/base', {from: 2, to: 10, number: '01011010101'}).then(({result}) => {
-         writeLog(result);
-     });
+const getRoundNumber = compose(Math.round, parseFloat);
+const getValueSquare = andThen(value => Math.pow(value, 2));
+const getRemainder = andThen(value => value % 3);
+const getValueLength = andThen(value => value.length);
 
-     wait(2500).then(() => {
-         writeLog('SecondLog')
+const valueHasRightLength = value => value.length < 10 && value.length > 2;
+const isValidNumber = value => !isNaN(parseFloat(value)) && parseFloat(value) > 0;
+const hasValidSymbols = value => new RegExp(/[0-9]+\.?[0-9]+/g).test(value);
+const isValueValid = allPass([valueHasRightLength, hasValidSymbols, isValidNumber]);
+const getValidationError = handleError => handleError.bind(null, 'ValidationError');
 
-         return wait(1500);
-     }).then(() => {
-         writeLog('ThirdLog');
+const getApiNumber = number => api.get(NUMBER_API_URL, { from: 10, to: 2, number });
+const getApiAnimal = andThen(id => api.get(ANIMAL_API_URL + id, {}));
+const getApiResult = compose(String, ({ result }) => result);
+const thenApiResult = andThen(getApiResult);
 
-         return wait(400);
-     }).then(() => {
-         handleSuccess('Done');
-     });
- }
+const processSequence = ({ value, writeLog, handleSuccess, handleError }) => {
+    writeLog(value);
+
+    const logAndReturn = (value) => {
+        writeLog(value);
+        return value;
+    };
+    const thenWriteLog = andThen(logAndReturn);
+    const thenHandleSuccess = andThen(handleSuccess);
+    const otherwiseHandleError = otherwise(handleError);
+
+    const handleValidationError = getValidationError(handleError);
+
+    const process = compose(
+        otherwiseHandleError, 
+        thenHandleSuccess,
+        thenApiResult,
+        getApiAnimal,
+        thenWriteLog, 
+        getRemainder, 
+        thenWriteLog, 
+        getValueSquare, 
+        thenWriteLog, 
+        getValueLength, 
+        thenWriteLog, 
+        thenApiResult, 
+        getApiNumber, 
+        logAndReturn, 
+        getRoundNumber
+    );
+
+    const conditionProcess = ifElse(isValueValid, process, handleValidationError);
+
+    conditionProcess(value);
+}
 
 export default processSequence;
